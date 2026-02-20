@@ -1,20 +1,21 @@
 # nixpacks.toml
 
-# 1. Use the standard Python provider
+# 1. Use standard Python provider
 providers = ["python"]
 
-# 2. Add System Libraries (Libgomp for AI)
-# The "..." tells Nixpacks to keep the default Python setup and ADD these packages
+# 2. Setup System
+# nixPkgs: Build tools (GCC includes the necessary OpenMP headers for compiling)
+# aptPkgs: Runtime library (libgomp1 is needed when running the app)
 [phases.setup]
-nixPkgs = ["...", "libgomp", "gcc", "gnumake", "cmake"]
+nixPkgs = ["...", "gcc", "gnumake", "cmake"]
 aptPkgs = ["...", "libgomp1"]
 
-# 3. Install Python Dependencies
-# We use 'python -m pip' to ensure we use the correct python version
+# 3. Install Python Deps
+# Force using the module pip to avoid path issues
 [phases.install]
 cmds = ["python -m pip install -r requirements.txt"]
 
-# 4. Start the Server
-# We use 'python -m uvicorn' to find the module we just installed
+# 4. Start Server
+# Use uvicorn properly
 [phases.start]
 cmds = ["python -m uvicorn main:app --host 0.0.0.0 --port $PORT"]
