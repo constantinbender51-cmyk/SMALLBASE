@@ -17,8 +17,8 @@ app.add_middleware(
 # --- CONFIGURATION ---
 # MODEL: Pythia 1B (TensorBlock)
 # FILE: Q2_K (Compressed)
-REPO_ID = "tensorblock/pythia-1b-GGUF"
-FILENAME = "pythia-1b-Q2_K.gguf"
+REPO_ID = "mav23/pythia-1.4b-GGUF"
+FILENAME = "pythia-1.4b.Q5_K_M.gguf"
 
 print(f"--- STARTUP: Downloading {FILENAME} ---")
 try:
