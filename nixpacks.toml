@@ -10,3 +10,8 @@ aptPkgs = ["libgomp1", "gcc", "g++", "make", "cmake"]
 # 3. Install Python Libraries (Fixes 'No module named fastapi')
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
+
+# 4. Start the server
+[phases.start]
+cmds = ["web: uvicorn main:app --host 0.0.0.0 --port $PORT
+"]
