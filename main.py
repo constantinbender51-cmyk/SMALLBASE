@@ -15,15 +15,16 @@ app.add_middleware(
 )
 
 # --- CONFIGURATION ---
-# MODEL: Pythia 2.8B (Deduped)
-# QUANTIZATION: Q2_K (Aggressive compression for low RAM usage)
+# MODEL: Pythia 1B
+# REPO: mav23 (Community upload)
+# FILE: Q4_K_M (Balanced quality and speed)
 # ARCHITECTURE: GPT-NeoX
-MODEL_REPO = "tensorblock/pythia-2.8b-deduped-GGUF"
-MODEL_FILE = "pythia-2.8b-deduped-Q2_K.gguf"
+MODEL_REPO = "mav23/pythia-1b-GGUF"
+MODEL_FILE = "pythia-1b.Q4_K_M.gguf"
 
 print(f"--- STARTUP: Loading {MODEL_REPO} ---")
 try:
-    # Pythia models use 'gpt_neox' architecture
+    # Pythia is GPT-NeoX architecture
     llm = AutoModelForCausalLM.from_pretrained(
         MODEL_REPO,
         model_file=MODEL_FILE,
@@ -41,7 +42,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def home():
-    return {"status": "LLM API is running", "model": "Pythia-2.8B-Q2"}
+    return {"status": "LLM API is running", "model": "Pythia-1B-mav23"}
 
 @app.post("/chat")
 def generate_chat(request: ChatRequest):
@@ -50,9 +51,9 @@ def generate_chat(request: ChatRequest):
     
     print(f"Received prompt: {request.prompt[:50]}...")
 
-    # --- PROMPT STRATEGY FOR 2.8B BASE MODEL ---
-    # Since this model is smarter (2.8B), we can try to force a conversation format.
-    # Otherwise, it might just ramble.
+    # --- PROMPT STRATEGY FOR 1B BASE MODEL ---
+    # 1B is smart enough to understand a basic script format.
+    # We use User/AI format to keep it on track.
     
     formatted_prompt = (
         "The following is a conversation with an AI.\n"
@@ -66,7 +67,7 @@ def generate_chat(request: ChatRequest):
             max_new_tokens=128, 
             temperature=0.7,
             repetition_penalty=1.1,
-            stop=["User:", "\nUser"] # Stop it from generating the user's side
+            stop=["User:", "\nUser"] # Stop the model from talking to itself
         )
         
         print("Generation complete.")
