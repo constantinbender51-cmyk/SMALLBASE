@@ -22,55 +22,55 @@ FILENAME = "pythia-1.4b.Q5_K_M.gguf"
 print(f"--- STARTUP: Downloading {FILENAME} ---")
 try:
     model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME)
-    # n_ctx=2048: The "Memory Limit" (in tokens)
-    llm = Llama(model_path=model_path, n_ctx=2048, verbose=True)
+    
+    # CRITICAL: Set context to 1024 to prevent RAM Crash.
+    # If this still crashes, lower it to 512.
+    llm = Llama(model_path=model_path, n_ctx=1024, verbose=True)
     print("--- STARTUP: Model Loaded Successfully ---")
 except Exception as e:
     print(f"CRITICAL ERROR: Failed to load model: {e}")
     llm = None
 
 class Message(BaseModel):
-    role: str
+    role: str # We receive this but we will IGNORE it
     text: str
 
 class ChatRequest(BaseModel):
     messages: List[Message]
-
-@app.get("/")
-def home():
-    return {"status": "LLM API is running", "mode": "Raw Completion / Memory"}
 
 @app.post("/chat")
 def generate_chat(request: ChatRequest):
     if not llm:
         raise HTTPException(status_code=500, detail="Model is not loaded.")
     
-    # 1. Build Raw Context
-    # We simply join all previous texts with a newline. 
-    # The model sees this as one continuous document.
-    raw_prompt = ""
-    
-    # We limit to last 15 messages to keep it fresh, 
-    # but you can increase this up to the context limit.
-    for msg in request.messages[-15:]:
-        # We add a newline to separate inputs, treating it like a list or log
-        raw_prompt += f"{msg.text}\n"
+    # 1. FLATTEN HISTORY
+    # Combine all previous inputs and outputs into one raw string.
+    # We use a space separator so sentences flow together.
+    # If you prefer line-by-line (like code or poems), change " " to "\n".
+    full_context = ""
+    for msg in request.messages:
+        full_context += msg.text + " "
 
-    print(f"--- RAW INPUT TO MODEL ---\n{raw_prompt}\n--------------------------")
+    # 2. SLIDING WINDOW (Prevents Crash)
+    # Pythia has a limit. We must cut the beginning of the text
+    # if it gets too long, or the server will crash/error.
+    # We keep the last 3000 characters (approx 750 tokens).
+    if len(full_context) > 3000:
+        full_context = full_context[-3000:]
+
+    print(f"--- CONTEXT INPUT ({len(full_context)} chars) ---\n{full_context}\n--------------------------")
 
     try:
         output = llm(
-            raw_prompt, 
-            max_tokens=64,  # Generate a short burst of continuation
-            # We REMOVED specific stop tokens like "User:" 
-            # It will stop when it finishes a thought or hits max_tokens
-            stop=[], 
+            full_context, 
+            max_tokens=64, # Generate a short burst
+            stop=[],       # No stop tokens. Just generate until max_tokens.
             echo=False, 
-            temperature=0.8 # Slightly higher creativity
+            temperature=0.8
         )
         
         response_text = output['choices'][0]['text']
-        return {"response": response_text.strip()}
+        return {"response": response_text} # Return raw text chunk
     except Exception as e:
         print(f"Generation Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
