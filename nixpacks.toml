@@ -1,17 +1,16 @@
 # nixpacks.toml
 
-# 1. Tell it we are a Python app
+# 1. Use Python
 providers = ["python"]
 
-# 2. Install System Libraries (Critical for AI)
+# 2. Install System Deps (Required for TensorBlock/llama-cpp)
 [phases.setup]
 aptPkgs = ["libgomp1", "gcc", "g++", "make", "cmake"]
 
-# 3. Install Python Libraries (Fixes 'No module named fastapi')
+# 3. Install Python Deps
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
 
-# 4. Start the server
+# 4. START COMMAND (Production Standard)
 [phases.start]
-cmds = ["uvicorn main:app --host 0.0.0.0 --port $PORT
-"]
+cmds = ["uvicorn main:app --host 0.0.0.0 --port $PORT"]
