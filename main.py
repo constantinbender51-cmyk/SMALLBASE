@@ -1,7 +1,9 @@
 import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from ctransformers import AutoModelForCausalLM
+# We use Llama from llama_cpp because it handles new GGUF files better than ctransformers
+from llama_cpp import Llama 
+from huggingface_hub import hf_hub_download
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -15,23 +17,24 @@ app.add_middleware(
 )
 
 # --- CONFIGURATION ---
-# MODEL: Pythia 1B
-# REPO: mav23 (Community upload)
-# FILE: Q4_K_M (Balanced quality and speed)
-# ARCHITECTURE: GPT-NeoX
-MODEL_REPO = "mav23/pythia-1b-GGUF"
-MODEL_FILE = "pythia-1b.Q4_K_M.gguf"
+# MODEL: Pythia 1B (Base Model)
+# REPO: tensorblock/pythia-1b-GGUF
+# FILE: Q4_K_M (Standard, balanced quantization)
+REPO_ID = "tensorblock/pythia-1b-GGUF"
+FILENAME = "pythia-1b-Q4_K_M.gguf"
 
-print(f"--- STARTUP: Loading {MODEL_REPO} ---")
+print(f"--- STARTUP: Downloading {REPO_ID} ---")
 try:
-    # Pythia is GPT-NeoX architecture
-    llm = AutoModelForCausalLM.from_pretrained(
-        MODEL_REPO,
-        model_file=MODEL_FILE,
-        model_type="gpt_neox", 
-        gpu_layers=0,
-        context_length=1024 
-    )
+    # 1. Download the specific file using HuggingFace Hub
+    # This caches the model so it doesn't re-download every restart
+    model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME)
+    print(f"Model downloaded to: {model_path}")
+
+    # 2. Load the model using llama-cpp-python
+    # n_ctx=1024 is standard for Pythia 1B
+    # verbose=True helps debug if it gets stuck
+    llm = Llama(model_path=model_path, n_ctx=1024, verbose=True)
+    
     print("--- STARTUP: Model Loaded Successfully ---")
 except Exception as e:
     print(f"CRITICAL ERROR: Failed to load model: {e}")
@@ -42,7 +45,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def home():
-    return {"status": "LLM API is running", "model": "Pythia-1B-mav23"}
+    return {"status": "LLM API is running", "model": "Pythia-1B-TensorBlock"}
 
 @app.post("/chat")
 def generate_chat(request: ChatRequest):
@@ -52,26 +55,30 @@ def generate_chat(request: ChatRequest):
     print(f"Received prompt: {request.prompt[:50]}...")
 
     # --- PROMPT STRATEGY FOR 1B BASE MODEL ---
-    # 1B is smart enough to understand a basic script format.
-    # We use User/AI format to keep it on track.
+    # Pythia 1B is a raw text predictor. 
+    # We must format the prompt like a script so it knows to answer.
     
     formatted_prompt = (
-        "The following is a conversation with an AI.\n"
+        "The following is a conversation with an AI assistant.\n"
         f"User: {request.prompt}\n"
         "AI:"
     )
-    
+
     try:
-        response_text = llm(
+        # llama-cpp-python syntax
+        output = llm(
             formatted_prompt, 
-            max_new_tokens=128, 
-            temperature=0.7,
-            repetition_penalty=1.1,
-            stop=["User:", "\nUser"] # Stop the model from talking to itself
+            max_tokens=128, 
+            stop=["User:", "\nUser"], # Stop generating when it's the user's turn
+            echo=False, # Return only the generated answer, not the prompt
+            temperature=0.7
         )
         
+        # Extract text from the response dictionary
+        response_text = output['choices'][0]['text']
+        
         print("Generation complete.")
-        return {"response": response_text}
+        return {"response": response_text.strip()}
     except Exception as e:
         print(f"Generation Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
