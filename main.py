@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List  # <--- Make sure this is imported
+from typing import List
 from llama_cpp import Llama 
 from huggingface_hub import hf_hub_download
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,47 +22,51 @@ FILENAME = "pythia-1.4b.Q5_K_M.gguf"
 print(f"--- STARTUP: Downloading {FILENAME} ---")
 try:
     model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME)
-    # n_ctx=2048 gives the model memory space
+    # n_ctx=2048: The "Memory Limit" (in tokens)
     llm = Llama(model_path=model_path, n_ctx=2048, verbose=True)
     print("--- STARTUP: Model Loaded Successfully ---")
 except Exception as e:
     print(f"CRITICAL ERROR: Failed to load model: {e}")
     llm = None
 
-# --- DATA MODELS ---
 class Message(BaseModel):
     role: str
     text: str
 
 class ChatRequest(BaseModel):
-    messages: List[Message] # The backend now expects a LIST, not a string
+    messages: List[Message]
+
+@app.get("/")
+def home():
+    return {"status": "LLM API is running", "mode": "Raw Completion / Memory"}
 
 @app.post("/chat")
 def generate_chat(request: ChatRequest):
     if not llm:
         raise HTTPException(status_code=500, detail="Model is not loaded.")
     
-    # Take the last 6 messages to prevent memory overflow
-    recent_messages = request.messages[-6:] 
+    # 1. Build Raw Context
+    # We simply join all previous texts with a newline. 
+    # The model sees this as one continuous document.
+    raw_prompt = ""
     
-    # Construct the script for the Base Model
-    formatted_prompt = "The following is a conversation between a human User and an AI Assistant.\n\n"
-    
-    for msg in recent_messages:
-        label = "User" if msg.role == "user" else "AI"
-        formatted_prompt += f"{label}: {msg.text}\n"
-            
-    formatted_prompt += "AI:"
+    # We limit to last 15 messages to keep it fresh, 
+    # but you can increase this up to the context limit.
+    for msg in request.messages[-15:]:
+        # We add a newline to separate inputs, treating it like a list or log
+        raw_prompt += f"{msg.text}\n"
 
-    print(f"--- PROMPT ---\n{formatted_prompt}")
+    print(f"--- RAW INPUT TO MODEL ---\n{raw_prompt}\n--------------------------")
 
     try:
         output = llm(
-            formatted_prompt, 
-            max_tokens=200, 
-            stop=["User:", "\nUser"], 
+            raw_prompt, 
+            max_tokens=64,  # Generate a short burst of continuation
+            # We REMOVED specific stop tokens like "User:" 
+            # It will stop when it finishes a thought or hits max_tokens
+            stop=[], 
             echo=False, 
-            temperature=0.7
+            temperature=0.8 # Slightly higher creativity
         )
         
         response_text = output['choices'][0]['text']
