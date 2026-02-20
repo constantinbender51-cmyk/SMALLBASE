@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import List
 from llama_cpp import Llama 
 from huggingface_hub import hf_hub_download
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,48 +16,57 @@ app.add_middleware(
 )
 
 # --- CONFIGURATION ---
-# MODEL: Pythia 1B (TensorBlock)
-# FILE: Q2_K (Compressed)
 REPO_ID = "mav23/pythia-1.4b-GGUF"
 FILENAME = "pythia-1.4b.Q5_K_M.gguf"
 
 print(f"--- STARTUP: Downloading {FILENAME} ---")
 try:
     model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME)
-    print(f"Model downloaded to: {model_path}")
-
-    # Load Model
-    llm = Llama(model_path=model_path, n_ctx=1024, verbose=True)
+    # n_ctx=2048 is crucial here to hold the memory
+    llm = Llama(model_path=model_path, n_ctx=2048, verbose=True) 
     print("--- STARTUP: Model Loaded Successfully ---")
 except Exception as e:
     print(f"CRITICAL ERROR: Failed to load model: {e}")
     llm = None
 
+class Message(BaseModel):
+    role: str
+    text: str
+
 class ChatRequest(BaseModel):
-    prompt: str
+    messages: List[Message]  # Receiving the whole history
 
 @app.get("/")
 def home():
-    return {"status": "LLM API is running", "model": "Pythia-1B-TensorBlock"}
+    return {"status": "LLM API is running", "model": "Pythia-1.4B-Q5-Memory"}
 
 @app.post("/chat")
 def generate_chat(request: ChatRequest):
     if not llm:
         raise HTTPException(status_code=500, detail="Model is not loaded.")
     
-    print(f"Received prompt: {request.prompt[:50]}...")
+    # 1. Build the Conversation History Prompt
+    # We take the last 10 messages to ensure we don't overflow the model's memory (context window)
+    recent_messages = request.messages[-10:] 
+    
+    formatted_prompt = "The following is a conversation between a human User and an AI Assistant.\n\n"
+    
+    for msg in recent_messages:
+        if msg.role == "user":
+            formatted_prompt += f"User: {msg.text}\n"
+        else:
+            formatted_prompt += f"AI: {msg.text}\n"
+            
+    # Add the prompt for the AI to start generating
+    formatted_prompt += "AI:"
 
-    formatted_prompt = (
-        "The following is a Q&A session with an AI.\n"
-        f"User: {request.prompt}\n"
-        "AI:"
-    )
+    print(f"--- PROMPT SENT TO MODEL ---\n{formatted_prompt}\n----------------------------")
 
     try:
         output = llm(
             formatted_prompt, 
-            max_tokens=128, 
-            stop=["User:", "\nUser"], 
+            max_tokens=200, 
+            stop=["User:", "\nUser", "User "], # Stop before hallucinating a user reply
             echo=False, 
             temperature=0.7
         )
