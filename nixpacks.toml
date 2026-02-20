@@ -3,15 +3,21 @@
 # 1. Use standard Python provider
 providers = ["python"]
 
-# 2. Setup System (Build tools & Libgomp)
+# 2. Setup System
+# We keep the build tools in nixPkgs and the runtime lib in aptPkgs
 [phases.setup]
 nixPkgs = ["...", "gcc", "gnumake", "cmake"]
 aptPkgs = ["...", "libgomp1"]
 
 # 3. Install Python Dependencies
+# ADDED: "python -m ensurepip" to force install pip if it is missing
 [phases.install]
-cmds = ["python -m pip install -r requirements.txt"]
+cmds = [
+    "python -m ensurepip --default-pip", 
+    "python -m pip install -r requirements.txt"
+]
 
-# 4. START COMMAND (Use [start], NOT [phases.start])
+# 4. Start Server
+# This must be in [start], NOT [phases.start]
 [start]
 cmd = "python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
