@@ -3,19 +3,15 @@
 # 1. Use standard Python provider
 providers = ["python"]
 
-# 2. Setup System
-# nixPkgs: Build tools (GCC includes the necessary OpenMP headers for compiling)
-# aptPkgs: Runtime library (libgomp1 is needed when running the app)
+# 2. Setup System (Build tools & Libgomp)
 [phases.setup]
 nixPkgs = ["...", "gcc", "gnumake", "cmake"]
 aptPkgs = ["...", "libgomp1"]
 
-# 3. Install Python Deps
-# Force using the module pip to avoid path issues
+# 3. Install Python Dependencies
 [phases.install]
 cmds = ["python -m pip install -r requirements.txt"]
 
-# 4. Start Server
-# Use uvicorn properly
-[phases.start]
-cmds = ["python -m uvicorn main:app --host 0.0.0.0 --port $PORT"]
+# 4. START COMMAND (Use [start], NOT [phases.start])
+[start]
+cmd = "python -m uvicorn main:app --host 0.0.0.0 --port $PORT"
