@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
+from typing import List  # <--- Make sure this is imported
 from llama_cpp import Llama 
 from huggingface_hub import hf_hub_download
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,55 +22,51 @@ FILENAME = "pythia-1.4b.Q5_K_M.gguf"
 print(f"--- STARTUP: Downloading {FILENAME} ---")
 try:
     model_path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME)
-    
-    # CRITICAL: Set context to 1024 to prevent RAM Crash.
-    # If this still crashes, lower it to 512.
-    llm = Llama(model_path=model_path, n_ctx=1024, verbose=True)
+    # n_ctx=2048 gives the model memory space
+    llm = Llama(model_path=model_path, n_ctx=2048, verbose=True)
     print("--- STARTUP: Model Loaded Successfully ---")
 except Exception as e:
     print(f"CRITICAL ERROR: Failed to load model: {e}")
     llm = None
 
+# --- DATA MODELS ---
 class Message(BaseModel):
-    role: str # We receive this but we will IGNORE it
+    role: str
     text: str
 
 class ChatRequest(BaseModel):
-    messages: List[Message]
+    messages: List[Message] # The backend now expects a LIST, not a string
 
 @app.post("/chat")
 def generate_chat(request: ChatRequest):
     if not llm:
         raise HTTPException(status_code=500, detail="Model is not loaded.")
     
-    # 1. FLATTEN HISTORY
-    # Combine all previous inputs and outputs into one raw string.
-    # We use a space separator so sentences flow together.
-    # If you prefer line-by-line (like code or poems), change " " to "\n".
-    full_context = ""
-    for msg in request.messages:
-        full_context += msg.text + " "
+    # Take the last 6 messages to prevent memory overflow
+    recent_messages = request.messages[-6:] 
+    
+    # Construct the script for the Base Model
+    formatted_prompt = "The following is a conversation between a human User and an AI Assistant.\n\n"
+    
+    for msg in recent_messages:
+        label = "User" if msg.role == "user" else "AI"
+        formatted_prompt += f"{label}: {msg.text}\n"
+            
+    formatted_prompt += "AI:"
 
-    # 2. SLIDING WINDOW (Prevents Crash)
-    # Pythia has a limit. We must cut the beginning of the text
-    # if it gets too long, or the server will crash/error.
-    # We keep the last 3000 characters (approx 750 tokens).
-    if len(full_context) > 3000:
-        full_context = full_context[-3000:]
-
-    print(f"--- CONTEXT INPUT ({len(full_context)} chars) ---\n{full_context}\n--------------------------")
+    print(f"--- PROMPT ---\n{formatted_prompt}")
 
     try:
         output = llm(
-            full_context, 
-            max_tokens=64, # Generate a short burst
-            stop=[],       # No stop tokens. Just generate until max_tokens.
+            formatted_prompt, 
+            max_tokens=200, 
+            stop=["User:", "\nUser"], 
             echo=False, 
-            temperature=0.8
+            temperature=0.7
         )
         
         response_text = output['choices'][0]['text']
-        return {"response": response_text} # Return raw text chunk
+        return {"response": response_text.strip()}
     except Exception as e:
         print(f"Generation Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
