@@ -15,12 +15,11 @@ app.add_middleware(
 )
 
 # --- CONFIGURATION ---
-# MODEL: Pythia 31M (Micro Base)
-# SOURCE: tensorblock
-# SIZE: ~25MB (Tiny!)
-MODEL_REPO = "tensorblock/pythia-31m-GGUF"
-# Tensorblock usually names files with the quantization in the name
-MODEL_FILE = "pythia-31m-Q4_K_M.gguf"
+# MODEL: Pythia 2.8B (Deduped)
+# QUANTIZATION: Q2_K (Aggressive compression for low RAM usage)
+# ARCHITECTURE: GPT-NeoX
+MODEL_REPO = "tensorblock/pythia-2.8b-deduped-GGUF"
+MODEL_FILE = "pythia-2.8b-deduped-Q2_K.gguf"
 
 print(f"--- STARTUP: Loading {MODEL_REPO} ---")
 try:
@@ -30,7 +29,7 @@ try:
         model_file=MODEL_FILE,
         model_type="gpt_neox", 
         gpu_layers=0,
-        context_length=512 # Reduced context for the micro model
+        context_length=1024 
     )
     print("--- STARTUP: Model Loaded Successfully ---")
 except Exception as e:
@@ -42,7 +41,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def home():
-    return {"status": "LLM API is running", "model": "Pythia-31m-Micro"}
+    return {"status": "LLM API is running", "model": "Pythia-2.8B-Q2"}
 
 @app.post("/chat")
 def generate_chat(request: ChatRequest):
@@ -51,15 +50,23 @@ def generate_chat(request: ChatRequest):
     
     print(f"Received prompt: {request.prompt[:50]}...")
 
-    # BASE MODEL STRATEGY:
-    # Just feed the prompt. The model will try to predict what comes next.
+    # --- PROMPT STRATEGY FOR 2.8B BASE MODEL ---
+    # Since this model is smarter (2.8B), we can try to force a conversation format.
+    # Otherwise, it might just ramble.
+    
+    formatted_prompt = (
+        "The following is a conversation with an AI.\n"
+        f"User: {request.prompt}\n"
+        "AI:"
+    )
     
     try:
         response_text = llm(
-            request.prompt, 
-            max_new_tokens=64, # Keep generation short
-            temperature=0.8,   # Slightly higher creativity for such a small model
-            repetition_penalty=1.1
+            formatted_prompt, 
+            max_new_tokens=128, 
+            temperature=0.7,
+            repetition_penalty=1.1,
+            stop=["User:", "\nUser"] # Stop it from generating the user's side
         )
         
         print("Generation complete.")
