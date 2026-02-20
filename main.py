@@ -15,16 +15,18 @@ app.add_middleware(
 )
 
 # --- CONFIGURATION ---
-MODEL_REPO = "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
-MODEL_FILE = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+# MODEL: Pythia 1.4B (GPT-NeoX Architecture)
+# This is a RAW BASE MODEL. It is not tuned for chat.
+MODEL_REPO = "TheBloke/pythia-1.4b-GGUF"
+MODEL_FILE = "pythia-1.4b.Q4_K_M.gguf"
 
-print("--- STARTUP: Loading Model ---")
+print("--- STARTUP: Loading Pythia Base Model ---")
 try:
-    # Reduced context_length to 1024 to save RAM and speed up processing
+    # model_type must be 'gpt_neox' for Pythia models
     llm = AutoModelForCausalLM.from_pretrained(
         MODEL_REPO,
         model_file=MODEL_FILE,
-        model_type="llama",
+        model_type="gpt_neox", 
         gpu_layers=0,
         context_length=1024 
     )
@@ -38,31 +40,41 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def home():
-    return {"status": "LLM API is running", "model": "TinyLlama-1.1B"}
+    return {"status": "LLM API is running", "model": "Pythia-1.4B-Base"}
 
-# IMPORTANT: Removed 'async'. 
-# Using 'def' instead of 'async def' runs this in a threadpool, 
-# preventing the AI from blocking the server network connection.
 @app.post("/chat")
 def generate_chat(request: ChatRequest):
     if not llm:
         raise HTTPException(status_code=500, detail="Model is not loaded on server.")
     
-    print(f"Received prompt: {request.prompt[:50]}...") # Log what we received
+    print(f"Received prompt: {request.prompt[:50]}...")
 
-    # Standard TinyLlama Chat format
-    formatted_prompt = f"<|system|>\nYou are a helpful assistant.\n</s>\n<|user|>\n{request.prompt}\n</s>\n<|assistant|>\n"
+    # --- PROMPT ENGINEERING FOR BASE MODELS ---
+    # Base models just complete text. They don't know they are assistants.
+    # We must structure the prompt to look like a script of a conversation.
+    # If we don't do this, the model might just continue your sentence instead of answering.
+    
+    formatted_prompt = (
+        "The following is a conversation between a human and an AI.\n"
+        f"Human: {request.prompt}\n"
+        "AI:"
+    )
     
     try:
-        # Reduced max_new_tokens to 128 for faster responses during testing
+        # stop=["Human:"] prevents the AI from generating the Human's next turn
         response_text = llm(
             formatted_prompt, 
             max_new_tokens=128, 
             temperature=0.7,
-            repetition_penalty=1.1
+            repetition_penalty=1.1,
+            stop=["Human:", "\nHuman"] 
         )
+        
+        # Clean up response (sometimes base models add extra newlines)
+        clean_response = response_text.strip()
+        
         print("Generation complete.")
-        return {"response": response_text}
+        return {"response": clean_response}
     except Exception as e:
         print(f"Generation Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
