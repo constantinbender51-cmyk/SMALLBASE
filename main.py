@@ -1,7 +1,7 @@
 import os
 import uvicorn
 from llama_cpp.server.app import create_app
-from llama_cpp.server.settings import ServerSettings
+from llama_cpp.server.settings import Settings  # <--- CHANGED THIS LINE
 from huggingface_hub import hf_hub_download
 
 print("Downloading/Verifying Model from HuggingFace...")
@@ -11,8 +11,8 @@ model_path = hf_hub_download(
     filename="Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
 )
 
-# Configure the Llama model and server settings
-settings = ServerSettings(
+# Use the unified Settings object to configure everything
+settings = Settings(
     model=model_path,
     n_ctx=4096,       # 4k context window
     host="0.0.0.0",
