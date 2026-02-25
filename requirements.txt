@@ -1,4 +1,6 @@
 fastapi
 uvicorn
-llama-cpp-python
+llama-cpp-python[server]
 huggingface-hub
+sse-starlette
+pydantic-settings
